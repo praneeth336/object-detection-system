@@ -1,0 +1,43 @@
+# YOLO Object Detection System Configuration
+
+models:
+  available:
+    - name: "yolov8n.pt"
+      description: "YOLOv8 Nano (Fastest, Lightest)"
+    - name: "yolov8s.pt"
+      description: "YOLOv8 Small (Balanced speed & accuracy)"
+    - name: "yolov8m.pt"
+      description: "YOLOv8 Medium (High accuracy)"
+    - name: "yolo11n.pt"
+      description: "YOLO11 Nano (Latest Gen, ultra-fast)"
+    - name: "yolo11s.pt"
+      description: "YOLO11 Small (Latest Gen, efficient)"
+  default_model: "yolov8n.pt"
+
+inference:
+  conf_threshold: 0.25
+  iou_threshold: 0.45
+  max_det: 300
+  device: "auto"  # 'cpu', 'cuda:0', or 'auto'
+  imgsz: 640
+
+tracking:
+  tracker_type: "bytetrack.yaml" # or "botsort.yaml"
+  track_history_length: 30
+
+roi:
+  default_polygon: []  # Normalized points [[x1, y1], [x2, y2], ...]
+  line_crossing:
+    enabled: false
+    start: [0.1, 0.5]
+    end: [0.9, 0.5]
+
+export:
+  output_dir: "outputs"
+  save_annotated: true
+  save_csv: true
+  save_json: true
+
+server:
+  host: "0.0.0.0"
+  port: 8000

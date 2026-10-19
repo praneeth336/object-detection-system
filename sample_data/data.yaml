@@ -1,0 +1,15 @@
+# Sample Dataset Configuration for YOLO Custom Training
+
+path: ./sample_data # Dataset root directory
+train: images/train # Train images (relative to path)
+val: images/val     # Val images (relative to path)
+test: images/test   # Test images (optional)
+
+# Number of classes
+nc: 3
+
+# Class names
+names:
+  0: object_a
+  1: object_b
+  2: object_c
