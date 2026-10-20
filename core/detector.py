@@ -10,7 +10,14 @@ try:
 except ImportError:
     YOLO = None
 
-from .utils import load_config, draw_detections, FPSCounter
+from .utils import (
+    load_config,
+    draw_detections,
+    FPSCounter,
+    detect_dominant_color,
+    calculate_pairwise_distances,
+    draw_distance_lines
+)
 from .roi import ROIManager, LineCounter
 
 @dataclass
@@ -23,9 +30,11 @@ class DetectionResult:
     total_count: int = 0
     annotated_image: Optional[np.ndarray] = None
     fps: float = 0.0
+    distances: List[Dict[str, Any]] = field(default_factory=list)
+    closest_distance: Optional[float] = None
 
 class YOLODetector:
-    """Unified YOLO Object Detection & Multi-Object Tracking Engine."""
+    """Unified YOLO Object Detection, Color Recognition & Multi-Object Tracking Engine."""
 
     def __init__(
         self,
@@ -73,10 +82,14 @@ class YOLODetector:
         target_classes: Optional[List[int]] = None,
         roi_manager: Optional[ROIManager] = None,
         line_counter: Optional[LineCounter] = None,
+        detect_color: bool = True,
+        measure_distance: bool = True,
+        distance_threshold: float = 150.0,
+        distance_connect_mode: str = "all",
         annotate: bool = True
     ) -> DetectionResult:
         """
-        Run object detection or tracking on a single OpenCV BGR image matrix.
+        Run object detection, color extraction, and spatial distance measurement on a single image frame.
         """
         h, w = frame.shape[:2]
         self.fps_counter.start() if frame_index == 0 else None
@@ -123,6 +136,18 @@ class YOLODetector:
                     "class_name": cls_name,
                     "track_id": track_id
                 }
+                
+                # Extract dominant color of the object
+                if detect_color:
+                    c_info = detect_dominant_color(frame, det_record["bbox"])
+                    det_record["color_name"] = c_info["name"]
+                    det_record["color_rgb"] = c_info["rgb"]
+                    det_record["color_hex"] = c_info["hex"]
+                else:
+                    det_record["color_name"] = ""
+                    det_record["color_rgb"] = []
+                    det_record["color_hex"] = ""
+                    
                 detections.append(det_record)
                 counts_by_class[cls_name] = counts_by_class.get(cls_name, 0) + 1
 
@@ -130,7 +155,6 @@ class YOLODetector:
         if roi_manager and not roi_manager.is_empty():
             inside_dets, _ = roi_manager.filter_detections(detections, w, h)
             detections = inside_dets
-            # Recalculate class counts for ROI
             counts_by_class = {}
             for d in detections:
                 cn = d["class_name"]
@@ -140,6 +164,14 @@ class YOLODetector:
         if line_counter:
             line_counter.update(detections, w, h)
 
+        # Calculate Pairwise Distances between detected objects
+        distances = []
+        closest_dist = None
+        if measure_distance and len(detections) > 1:
+            distances = calculate_pairwise_distances(detections, alert_threshold=distance_threshold)
+            if distances:
+                closest_dist = distances[0]["distance_px"]
+
         # Draw Annotations
         annotated_img = None
         if annotate:
@@ -148,8 +180,19 @@ class YOLODetector:
                 detections,
                 show_labels=True,
                 show_conf=True,
-                show_tracks=enable_tracking
+                show_tracks=enable_tracking,
+                show_color=detect_color
             )
+            
+            # Overlay distance measurement lines
+            if measure_distance and distances:
+                annotated_img = draw_distance_lines(
+                    annotated_img,
+                    distances,
+                    alert_threshold=distance_threshold,
+                    connect_mode=distance_connect_mode
+                )
+                
             if roi_manager and not roi_manager.is_empty():
                 annotated_img = roi_manager.draw_roi(annotated_img)
             if line_counter:
@@ -164,14 +207,20 @@ class YOLODetector:
             counts_by_class=counts_by_class,
             total_count=len(detections),
             annotated_image=annotated_img,
-            fps=round(fps, 1)
+            fps=round(fps, 1),
+            distances=distances,
+            closest_distance=closest_dist
         )
 
     def process_image(
         self,
         image_path: str,
         output_path: Optional[str] = None,
-        target_classes: Optional[List[int]] = None
+        target_classes: Optional[List[int]] = None,
+        detect_color: bool = True,
+        measure_distance: bool = True,
+        distance_threshold: float = 150.0,
+        distance_connect_mode: str = "all"
     ) -> DetectionResult:
         """Process a static image file from disk."""
         if not os.path.exists(image_path):
@@ -181,7 +230,14 @@ class YOLODetector:
         if image is None:
             raise ValueError(f"Unable to read image at {image_path}")
 
-        result = self.detect_frame(image, target_classes=target_classes)
+        result = self.detect_frame(
+            image,
+            target_classes=target_classes,
+            detect_color=detect_color,
+            measure_distance=measure_distance,
+            distance_threshold=distance_threshold,
+            distance_connect_mode=distance_connect_mode
+        )
 
         if output_path and result.annotated_image is not None:
             os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
@@ -196,6 +252,10 @@ class YOLODetector:
         target_classes: Optional[List[int]] = None,
         roi_manager: Optional[ROIManager] = None,
         line_counter: Optional[LineCounter] = None,
+        detect_color: bool = True,
+        measure_distance: bool = True,
+        distance_threshold: float = 150.0,
+        distance_connect_mode: str = "all",
         max_frames: Optional[int] = None
     ) -> Generator[DetectionResult, None, None]:
         """
@@ -219,6 +279,10 @@ class YOLODetector:
                     target_classes=target_classes,
                     roi_manager=roi_manager,
                     line_counter=line_counter,
+                    detect_color=detect_color,
+                    measure_distance=measure_distance,
+                    distance_threshold=distance_threshold,
+                    distance_connect_mode=distance_connect_mode,
                     annotate=True
                 )
 

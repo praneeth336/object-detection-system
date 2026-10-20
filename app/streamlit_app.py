@@ -18,7 +18,7 @@ from core.trainer import YOLOTrainer
 
 # Streamlit Page Config
 st.set_page_config(
-    page_title="YOLO Object Detection & Tracking System",
+    page_title="YOLO Object Detection, Color & Distance Analytics",
     page_icon="🎯",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -30,18 +30,30 @@ st.markdown("""
         font-size: 2.2rem;
         font-weight: 700;
         color: #1E88E5;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.3rem;
     }
     .sub-header {
-        font-size: 1.1rem;
+        font-size: 1.05rem;
         color: #555555;
         margin-bottom: 1.5rem;
     }
-    .metric-card {
-        background-color: #f8f9fa;
-        border-radius: 8px;
-        padding: 1rem;
-        border-left: 4px solid #1E88E5;
+    .alert-banner {
+        background-color: #ffebee;
+        color: #c62828;
+        padding: 0.8rem 1rem;
+        border-radius: 6px;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        border-left: 5px solid #d32f2f;
+    }
+    .safe-banner {
+        background-color: #e8f5e9;
+        color: #2e7d32;
+        padding: 0.8rem 1rem;
+        border-radius: 6px;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        border-left: 5px solid #388e3c;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -51,15 +63,14 @@ def get_detector(model_name: str, conf: float, iou: float):
     return YOLODetector(model_path=model_name, conf_threshold=conf, iou_threshold=iou)
 
 def main():
-    st.markdown('<div class="main-header">🎯 YOLO Object Detection & Tracking System</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Real-time object detection, multi-object tracking, region of interest analytics, and custom model training.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">🎯 YOLO Object Detection, Color & Spatial Analytics</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Real-time object detection, dominant color recognition, inter-object distance estimation, tracking, and ROI analytics.</div>', unsafe_allow_html=True)
 
     config = load_config()
     available_models = [m["name"] for m in config.get("models", {}).get("available", [{"name": "yolov8n.pt"}])]
 
-    # Sidebar Controls
+    # 1. Sidebar - Model Settings
     st.sidebar.header("⚙️ Model & Detection Settings")
-    
     selected_model = st.sidebar.selectbox("Select Model Architecture", available_models, index=0)
     conf_thresh = st.sidebar.slider("Confidence Threshold", min_value=0.05, max_value=1.0, value=0.25, step=0.05)
     iou_thresh = st.sidebar.slider("IoU (NMS) Threshold", min_value=0.05, max_value=1.0, value=0.45, step=0.05)
@@ -81,8 +92,29 @@ def main():
         name_to_id = {v: k for k, v in detector.class_names.items()}
         target_class_ids = [name_to_id[name] for name in selected_classes_names if name in name_to_id]
 
-    # Analytics / ROI Toggles
-    st.sidebar.header("📐 ROI & Tracking Analytics")
+    # 2. Sidebar - Color & Distance Features
+    st.sidebar.header("🎨 Color & 📏 Distance Analytics")
+    enable_color = st.sidebar.checkbox("Detect Object Dominant Color", value=True, help="Identifies dominant object color (Red, Blue, Green, etc.) using computer vision color clustering.")
+    enable_distance = st.sidebar.checkbox("Measure Distance Between Objects", value=True, help="Calculates Euclidean spatial distance between detected object centroids and draws connecting measurement lines.")
+    
+    dist_threshold = 150
+    dist_mode = "all"
+    if enable_distance:
+        dist_threshold = st.sidebar.slider("Proximity Alert Threshold (pixels)", min_value=30, max_value=500, value=150, step=10, help="Objects closer than this distance trigger a proximity alert with a red indicator.")
+        mode_option = st.sidebar.selectbox(
+            "Distance Line Connect Mode",
+            ["All Object Pairs", "Proximity Alerts Only (< Threshold)", "Nearest Neighbor Only"],
+            index=0
+        )
+        if mode_option == "Proximity Alerts Only (< Threshold)":
+            dist_mode = "close_only"
+        elif mode_option == "Nearest Neighbor Only":
+            dist_mode = "nearest_only"
+        else:
+            dist_mode = "all"
+
+    # 3. Sidebar - ROI & Tracking
+    st.sidebar.header("📐 Zone & Tracking Analytics")
     enable_tracking = st.sidebar.checkbox("Enable Multi-Object Tracking (MOT)", value=True)
     enable_roi = st.sidebar.checkbox("Enable Region of Interest (ROI Zone)", value=False)
     enable_line_crossing = st.sidebar.checkbox("Enable Line Crossing Counter", value=False)
@@ -110,7 +142,7 @@ def main():
 
     # TAB 1: Image Detection
     with tab1:
-        st.subheader("Image Object Detection")
+        st.subheader("Image Object Detection, Color Recognition & Distance Estimation")
         uploaded_file = st.file_uploader("Upload an Image", type=["jpg", "jpeg", "png", "webp"])
         
         if uploaded_file is not None:
@@ -124,44 +156,94 @@ def main():
                 target_classes=target_class_ids,
                 roi_manager=roi_manager,
                 line_counter=line_counter,
+                detect_color=enable_color,
+                measure_distance=enable_distance,
+                distance_threshold=float(dist_threshold),
+                distance_connect_mode=dist_mode,
                 annotate=True
             )
             latency_ms = (time.time() - start_t) * 1000
 
+            # Side by side visual display
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown("**Original Input**")
                 st.image(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), use_container_width=True)
 
             with col2:
-                st.markdown("**YOLO Annotated Detection**")
+                st.markdown("**Annotated Detection (with Color & Distance Lines)**")
                 if result.annotated_image is not None:
                     st.image(cv2.cvtColor(result.annotated_image, cv2.COLOR_BGR2RGB), use_container_width=True)
 
-            # Metrics display
-            mcol1, mcol2, mcol3 = st.columns(3)
+            # Metrics row
+            close_pairs_count = sum(1 for p in result.distances if p.get("is_close", False))
+            
+            mcol1, mcol2, mcol3, mcol4 = st.columns(4)
             mcol1.metric("Total Objects Detected", result.total_count)
             mcol2.metric("Inference Latency", f"{latency_ms:.1f} ms")
-            mcol3.metric("Detected Classes", len(result.counts_by_class))
+            
+            if enable_distance and len(result.detections) > 1:
+                closest_txt = f"{result.closest_distance} px" if result.closest_distance is not None else "N/A"
+                mcol3.metric("Closest Object Distance", closest_txt)
+                mcol4.metric("🚨 Proximity Alerts (< threshold)", close_pairs_count)
+            else:
+                mcol3.metric("Detected Classes", len(result.counts_by_class))
+                mcol4.metric("Proximity Analysis", "Needs ≥ 2 objects" if len(result.detections) < 2 else "Disabled")
 
-            if result.counts_by_class:
-                st.markdown("##### Detected Object Counts")
-                counts_df = pd.DataFrame(list(result.counts_by_class.items()), columns=["Class", "Count"])
-                st.dataframe(counts_df, use_container_width=True)
+            # Proximity Alert Banner
+            if enable_distance and close_pairs_count > 0:
+                st.markdown(f'<div class="alert-banner">⚠️ PROXIMITY ALERT: {close_pairs_count} pair(s) of objects are within {dist_threshold} pixels of each other!</div>', unsafe_allow_html=True)
+            elif enable_distance and len(result.detections) >= 2:
+                st.markdown(f'<div class="safe-banner">✅ Safe Spatial Clearance: All detected objects maintain distance &ge; {dist_threshold} pixels.</div>', unsafe_allow_html=True)
 
-            if result.detections:
-                dets_df = pd.DataFrame(result.detections)
-                st.markdown("##### Detailed Bounding Box Data")
-                st.dataframe(dets_df, use_container_width=True)
+            # Expandable Details: Objects & Colors
+            st.markdown("---")
+            det_tab, dist_tab = st.tabs(["📋 Detected Objects & Color Classification", "📏 Inter-Object Pairwise Distances"])
+            
+            with det_tab:
+                if result.detections:
+                    table_rows = []
+                    for idx, d in enumerate(result.detections):
+                        table_rows.append({
+                            "Index": idx + 1,
+                            "Track ID": d.get("track_id", "-"),
+                            "Class": d.get("class_name", ""),
+                            "Dominant Color": d.get("color_name", "N/A"),
+                            "Color Hex": d.get("color_hex", ""),
+                            "Confidence": f"{d.get('confidence', 0):.2%}",
+                            "Bounding Box [x1, y1, x2, y2]": str(d.get("bbox", []))
+                        })
+                    df_objs = pd.DataFrame(table_rows)
+                    st.dataframe(df_objs, use_container_width=True)
 
-                # Export downloads
-                csv_path = export_detections_csv(result.detections, "outputs/latest_image_detections.csv")
-                with open(csv_path, "rb") as f:
-                    st.download_button("📥 Download Detections CSV", f, file_name="image_detections.csv", mime="text/csv")
+                    # Export downloads
+                    csv_path = export_detections_csv(result.detections, "outputs/latest_image_detections.csv")
+                    with open(csv_path, "rb") as f:
+                        st.download_button("📥 Download Detections CSV (with Color)", f, file_name="detections_with_color.csv", mime="text/csv")
+                else:
+                    st.info("No objects detected in the uploaded image.")
+
+            with dist_tab:
+                if enable_distance and result.distances:
+                    dist_rows = []
+                    for p in result.distances:
+                        dist_rows.append({
+                            "Object 1": p["obj_a_label"],
+                            "Object 2": p["obj_b_label"],
+                            "Distance (Pixels)": f"{p['distance_px']:.1f} px",
+                            "Safety Status": p["status"],
+                            "Alert (< Threshold)": "🚨 YES" if p["is_close"] else "🟢 NO"
+                        })
+                    df_dist = pd.DataFrame(dist_rows)
+                    st.dataframe(df_dist, use_container_width=True)
+                elif enable_distance:
+                    st.info("At least two objects are required to compute inter-object distances.")
+                else:
+                    st.info("Distance measurement is currently toggled off in the sidebar.")
 
     # TAB 2: Video & Stream Processing
     with tab2:
-        st.subheader("Video File & Stream Object Detection")
+        st.subheader("Video File & Live Stream Object Detection with Color & Distance Tracking")
         source_type = st.radio("Select Video Input Source", ["Video File Upload", "Webcam Feed (Local)"], horizontal=True)
 
         if source_type == "Video File Upload":
@@ -197,17 +279,27 @@ def main():
                             target_classes=target_class_ids,
                             roi_manager=roi_manager,
                             line_counter=line_counter,
+                            detect_color=enable_color,
+                            measure_distance=enable_distance,
+                            distance_threshold=float(dist_threshold),
+                            distance_connect_mode=dist_mode,
                             annotate=True
                         )
 
                         all_video_detections.extend(res.detections)
-                        counts_over_time.append({"frame": frame_idx, "count": res.total_count, "fps": res.fps})
+                        counts_over_time.append({
+                            "frame": frame_idx,
+                            "count": res.total_count,
+                            "fps": res.fps,
+                            "closest_distance": res.closest_distance or 0.0
+                        })
 
                         if res.annotated_image is not None:
                             rgb_frame = cv2.cvtColor(res.annotated_image, cv2.COLOR_BGR2RGB)
                             st_video_placeholder.image(rgb_frame, channels="RGB", use_container_width=True)
 
-                        st_info_placeholder.text(f"Processing Frame {frame_idx}/{frame_count} | Objects: {res.total_count} | FPS: {res.fps}")
+                        closest_info = f" | Closest Dist: {res.closest_distance}px" if res.closest_distance else ""
+                        st_info_placeholder.text(f"Processing Frame {frame_idx}/{frame_count} | Objects: {res.total_count} | FPS: {res.fps}{closest_info}")
                         
                         if frame_count > 0:
                             progress_bar.progress(min(1.0, frame_idx / frame_count))
@@ -243,6 +335,10 @@ def main():
                         target_classes=target_class_ids,
                         roi_manager=roi_manager,
                         line_counter=line_counter,
+                        detect_color=enable_color,
+                        measure_distance=enable_distance,
+                        distance_threshold=float(dist_threshold),
+                        distance_connect_mode=dist_mode,
                         annotate=True
                     )
 
@@ -250,7 +346,8 @@ def main():
                         rgb_frame = cv2.cvtColor(res.annotated_image, cv2.COLOR_BGR2RGB)
                         cam_placeholder.image(rgb_frame, channels="RGB", use_container_width=True)
 
-                    cam_info.markdown(f"**Live Feed FPS:** {res.fps} | **Current Object Count:** {res.total_count}")
+                    closest_info = f" | Closest Dist: {res.closest_distance}px" if res.closest_distance else ""
+                    cam_info.markdown(f"**Live Feed FPS:** {res.fps} | **Current Object Count:** {res.total_count}{closest_info}")
                     frame_idx += 1
                 cap.release()
 

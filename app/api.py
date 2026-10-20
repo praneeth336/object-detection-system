@@ -17,9 +17,9 @@ from core.detector import YOLODetector
 from core.utils import load_config
 
 app = FastAPI(
-    title="YOLO Object Detection & Analytics REST API",
-    description="High-performance API for object detection, multi-object tracking, and image analysis powered by Ultralytics YOLO.",
-    version="1.0.0"
+    title="YOLO Object Detection, Color & Spatial Analytics REST API",
+    description="High-performance API for object detection, color recognition, distance estimation, and tracking powered by Ultralytics YOLO.",
+    version="1.1.0"
 )
 
 # Global Detector Instance
@@ -41,12 +41,16 @@ class DetectionItem(BaseModel):
     class_id: int
     class_name: str
     track_id: Optional[int] = None
+    color_name: Optional[str] = None
+    color_hex: Optional[str] = None
 
 class DetectionResponse(BaseModel):
     filename: str
     total_objects: int
     counts_by_class: Dict[str, int]
     detections: List[DetectionItem]
+    distances: Optional[List[Dict[str, Any]]] = None
+    closest_distance: Optional[float] = None
     annotated_image_base64: Optional[str] = None
 
 @app.get("/api/v1/health")
@@ -70,12 +74,15 @@ async def detect_object(
     file: UploadFile = File(...),
     conf_threshold: float = Query(0.25, ge=0.01, le=1.0),
     iou_threshold: float = Query(0.45, ge=0.01, le=1.0),
+    detect_color: bool = Query(True),
+    measure_distance: bool = Query(True),
+    distance_threshold: float = Query(150.0, ge=10.0, le=1000.0),
     return_annotated: bool = Query(True),
     classes: Optional[List[int]] = Query(None)
 ):
     """
-    Perform object detection on an uploaded image file.
-    Returns JSON bounding box predictions, class labels, counts, and optionally base64 annotated image.
+    Perform object detection with color recognition and inter-object distance estimation on an uploaded image.
+    Returns bounding box predictions, color names, pairwise distances, and base64 annotated image.
     """
     if not detector_instance:
         raise HTTPException(status_code=500, detail="Detector model not initialized.")
@@ -87,12 +94,14 @@ async def detect_object(
     if image is None:
         raise HTTPException(status_code=400, detail="Invalid or corrupt image file.")
 
-    # Update threshold dynamically
     detector_instance.update_parameters(conf_threshold=conf_threshold, iou_threshold=iou_threshold)
 
     result = detector_instance.detect_frame(
         frame=image,
         target_classes=classes,
+        detect_color=detect_color,
+        measure_distance=measure_distance,
+        distance_threshold=distance_threshold,
         annotate=return_annotated
     )
 
@@ -106,6 +115,8 @@ async def detect_object(
         total_objects=result.total_count,
         counts_by_class=result.counts_by_class,
         detections=[DetectionItem(**d) for d in result.detections],
+        distances=result.distances,
+        closest_distance=result.closest_distance,
         annotated_image_base64=base64_str
     )
 

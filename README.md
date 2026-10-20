@@ -7,20 +7,23 @@ A full-featured, modular object detection, tracking, zone analysis, and custom m
 ## 🌟 Key Features
 
 1. **Multi-Model Support**: Pre-trained YOLOv8/YOLO11 models (Nano, Small, Medium, Large) + Custom fine-tuned weights support.
-2. **Multi-Object Tracking (MOT)**: Real-time object tracking using ByteTrack / BoT-SORT algorithms with unique track IDs.
-3. **Region of Interest (ROI) & Line Crossing**:
+2. **🎨 Dominant Color Recognition**: Computer-vision color clustering that identifies object dominant colors (Red, Blue, Green, Yellow, etc.) and exports color names and hex values.
+3. **📏 Inter-Object Distance Measurement**: Calculates Euclidean spatial distance between detected objects, draws distance measurement lines, and triggers proximity alerts when objects are too close.
+4. **Multi-Object Tracking (MOT)**: Real-time object tracking using ByteTrack / BoT-SORT algorithms with unique track IDs.
+5. **Region of Interest (ROI) & Line Crossing**:
    - Custom polygon zone detection filtering.
    - Line-crossing entry/exit object counter HUD overlay.
-4. **Interactive Web Application (Streamlit)**:
+6. **Interactive Web Application (Streamlit)**:
    - Drag & drop image detection with side-by-side visualization.
-   - Video file and real-time webcam feed processing with live analytics dashboard.
-   - Parameter sliders for Confidence Threshold & IoU (NMS).
+   - Real-time video file and webcam processing with live analytics dashboard.
+   - Sliders for Confidence, NMS IoU, and Proximity Alert Distance thresholds.
+   - Pairwise distance matrix and color breakdown data tables.
    - In-app custom model training interface.
-5. **RESTful API Backend (FastAPI)**:
-   - High-throughput programmatic endpoints returning JSON predictions and base64 annotated images.
-6. **Command Line Interface (CLI)**:
+7. **RESTful API Backend (FastAPI)**:
+   - High-throughput programmatic endpoints returning JSON predictions, colors, distances, and base64 annotated images.
+8. **Command Line Interface (CLI)**:
    - Command-line tool for batch processing image folders, video files, running training, or starting web/API servers.
-7. **Analytics Export**: Automatic export of detection history to CSV & JSON formats.
+9. **Analytics Export**: Automatic export of detection history (including colors and coordinates) to CSV & JSON formats.
 
 ---
 

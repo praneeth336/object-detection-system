@@ -10,7 +10,10 @@ from .utils import (
     draw_detections,
     export_detections_csv,
     export_detections_json,
-    FPSCounter
+    FPSCounter,
+    detect_dominant_color,
+    calculate_pairwise_distances,
+    draw_distance_lines
 )
 
 __all__ = [
@@ -22,5 +25,8 @@ __all__ = [
     "draw_detections",
     "export_detections_csv",
     "export_detections_json",
-    "FPSCounter"
+    "FPSCounter",
+    "detect_dominant_color",
+    "calculate_pairwise_distances",
+    "draw_distance_lines"
 ]

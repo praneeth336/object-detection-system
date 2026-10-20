@@ -30,9 +30,16 @@ def cmd_detect_image(args):
     for img_path in image_paths:
         fname = os.path.basename(img_path)
         out_img_path = os.path.join(args.output_dir, f"det_{fname}")
-        res = detector.process_image(img_path, output_path=out_img_path)
+        res = detector.process_image(
+            img_path,
+            output_path=out_img_path,
+            detect_color=args.detect_color,
+            measure_distance=args.measure_distance,
+            distance_threshold=args.dist_thresh
+        )
         all_detections.extend(res.detections)
-        print(f"✅ Processed {fname} -> Found {res.total_count} objects | Saved: {out_img_path}")
+        dist_info = f" | Closest dist: {res.closest_distance}px" if res.closest_distance else ""
+        print(f"✅ Processed {fname} -> Found {res.total_count} objects{dist_info} | Saved: {out_img_path}")
 
     if args.save_csv:
         csv_file = os.path.join(args.output_dir, "detections.csv")
@@ -70,12 +77,20 @@ def cmd_detect_video(args):
             ret, frame = cap.read()
             if not ret:
                 break
-            res = detector.detect_frame(frame, frame_index=frame_idx, enable_tracking=True)
+            res = detector.detect_frame(
+                frame,
+                frame_index=frame_idx,
+                enable_tracking=True,
+                detect_color=args.detect_color,
+                measure_distance=args.measure_distance,
+                distance_threshold=args.dist_thresh
+            )
             if res.annotated_image is not None:
                 out_writer.write(res.annotated_image)
             all_video_dets.extend(res.detections)
             if frame_idx % 30 == 0:
-                print(f"Frame {frame_idx} | Objects: {res.total_count} | FPS: {res.fps}")
+                closest_info = f" | Closest: {res.closest_distance}px" if res.closest_distance else ""
+                print(f"Frame {frame_idx} | Objects: {res.total_count}{closest_info} | FPS: {res.fps}")
             frame_idx += 1
     finally:
         cap.release()
@@ -98,7 +113,7 @@ def cmd_train(args):
 
 def cmd_serve_ui(args):
     print(f"[YOLO CLI] Launching Streamlit Web App on port {args.port}...")
-    cmd = [sys.executable, "-m", "streamlit", "run", "app/streamlit_app.py", "--server.port", str(args.port)]
+    cmd = [sys.executable, "-m", "streamlit", "run", "app/streamlit_app.py", "--server.port", str(args.port), "--browser.gatherUsageStats", "false"]
     subprocess.run(cmd)
 
 def cmd_serve_api(args):
@@ -107,7 +122,7 @@ def cmd_serve_api(args):
     uvicorn.run("app.api:app", host=args.host, port=args.port, reload=True)
 
 def main():
-    parser = argparse.ArgumentParser(description="YOLO Object Detection & Tracking Command Line Interface")
+    parser = argparse.ArgumentParser(description="YOLO Object Detection, Color & Spatial Tracking CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # detect-image
@@ -117,9 +132,12 @@ def main():
     p_img.add_argument("--model", "-m", default="yolov8n.pt", help="YOLO model path or name")
     p_img.add_argument("--conf", type=float, default=0.25, help="Confidence threshold")
     p_img.add_argument("--iou", type=float, default=0.45, help="IoU NMS threshold")
+    p_img.add_argument("--no-color", dest="detect_color", action="store_false", help="Disable color recognition")
+    p_img.add_argument("--no-distance", dest="measure_distance", action="store_false", help="Disable distance measurement")
+    p_img.add_argument("--dist-thresh", type=float, default=150.0, help="Proximity alert threshold in pixels")
     p_img.add_argument("--save-csv", action="store_true", help="Export detections to CSV")
     p_img.add_argument("--save-json", action="store_true", help="Export detections to JSON")
-    p_img.set_defaults(func=cmd_detect_image)
+    p_img.set_defaults(func=cmd_detect_image, detect_color=True, measure_distance=True)
 
     # detect-video
     p_vid = subparsers.add_parser("detect-video", help="Detect and track objects in video or webcam stream")
@@ -128,8 +146,11 @@ def main():
     p_vid.add_argument("--model", "-m", default="yolov8n.pt", help="YOLO model path or name")
     p_vid.add_argument("--conf", type=float, default=0.25, help="Confidence threshold")
     p_vid.add_argument("--iou", type=float, default=0.45, help="IoU NMS threshold")
+    p_vid.add_argument("--no-color", dest="detect_color", action="store_false", help="Disable color recognition")
+    p_vid.add_argument("--no-distance", dest="measure_distance", action="store_false", help="Disable distance measurement")
+    p_vid.add_argument("--dist-thresh", type=float, default=150.0, help="Proximity alert threshold in pixels")
     p_vid.add_argument("--save-csv", action="store_true", help="Export detections to CSV")
-    p_vid.set_defaults(func=cmd_detect_video)
+    p_vid.set_defaults(func=cmd_detect_video, detect_color=True, measure_distance=True)
 
     # train
     p_trn = subparsers.add_parser("train", help="Train custom YOLO model on custom dataset")
