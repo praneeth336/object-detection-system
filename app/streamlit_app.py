@@ -15,6 +15,7 @@ from core.detector import YOLODetector
 from core.roi import ROIManager, LineCounter
 from core.utils import load_config, export_detections_csv, export_detections_json
 from core.trainer import YOLOTrainer
+from evaluate import evaluate_model
 
 # Streamlit Page Config
 st.set_page_config(
@@ -138,7 +139,13 @@ def main():
         line_counter = LineCounter(line_pt1=[0.1, 0.5], line_pt2=[0.9, 0.5])
 
     # Main Tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["🖼️ Image Detection", "🎥 Video & Stream Processing", "🏋️ Custom Training", "📊 Analytics & Export"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "🖼️ Image Detection",
+        "🎥 Video & Stream Processing",
+        "🎯 Model Accuracy Benchmark",
+        "🏋️ Custom Training",
+        "📊 Analytics & Export"
+    ])
 
     # TAB 1: Image Detection
     with tab1:
@@ -351,8 +358,95 @@ def main():
                     frame_idx += 1
                 cap.release()
 
-    # TAB 3: Custom Model Training
+    # TAB 3: Model Accuracy Benchmark
     with tab3:
+        st.subheader("🎯 Model Accuracy & Performance Benchmarking")
+        st.markdown("Evaluate standard object detection accuracy metrics (**mAP50**, **mAP50-95**, **Precision**, **Recall**, **F1-Score**) and inference latency across validation datasets.")
+
+        bcol1, bcol2, bcol3 = st.columns([2, 2, 1])
+        with bcol1:
+            eval_model = st.selectbox("Model to Evaluate", available_models, index=available_models.index(selected_model) if selected_model in available_models else 0, key="eval_m")
+        with bcol2:
+            eval_dataset = st.text_input("Validation Dataset YAML", value="coco8.yaml", help="Path or name of dataset yaml (e.g. coco8.yaml, coco128.yaml, sample_data/data.yaml)")
+        with bcol3:
+            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+            run_eval_btn = st.button("⚡ Run Accuracy Test", use_container_width=True)
+
+        # Load existing report or run new evaluation
+        report_file = os.path.join("outputs", "model_accuracy_report.json")
+        eval_data = None
+
+        if run_eval_btn:
+            with st.spinner(f"Evaluating {eval_model} on {eval_dataset}..."):
+                try:
+                    eval_data = evaluate_model(model_path=eval_model, data_yaml=eval_dataset)
+                    st.success("Accuracy evaluation completed successfully!")
+                except Exception as ex:
+                    st.error(f"Evaluation failed: {ex}")
+        elif os.path.exists(report_file):
+            try:
+                import json
+                with open(report_file, "r") as f:
+                    eval_data = json.load(f)
+            except Exception:
+                pass
+
+        if eval_data:
+            ov = eval_data.get("overall_metrics", {})
+            spd = eval_data.get("speed_benchmark_ms", {})
+
+            # Metric Cards
+            mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+            mc1.metric("mAP@50", f"{ov.get('mAP50', 0) * 100:.1f}%")
+            mc2.metric("mAP@50-95", f"{ov.get('mAP50_95', 0) * 100:.1f}%")
+            mc3.metric("Precision (P)", f"{ov.get('precision', 0) * 100:.1f}%")
+            mc4.metric("Recall (R)", f"{ov.get('recall', 0) * 100:.1f}%")
+            mc5.metric("F1-Score", f"{ov.get('f1_score', 0) * 100:.1f}%")
+
+            sc1, sc2, sc3 = st.columns(3)
+            sc1.metric("Inference Latency", f"{spd.get('inference', 0):.1f} ms")
+            sc2.metric("Total Latency per Image", f"{spd.get('total_latency_per_image', 0):.1f} ms")
+            sc3.metric("Effective Throughput", f"{spd.get('estimated_fps', 0)} FPS")
+
+            # Per-class metrics table
+            st.markdown("##### 📋 Per-Class Accuracy Breakdown")
+            classes_breakdown = eval_data.get("per_class_breakdown", [])
+            if classes_breakdown:
+                df_cls = pd.DataFrame(classes_breakdown)
+                # Format percentage columns
+                for col in ["Precision", "Recall", "F1-Score", "mAP@50", "mAP@50-95"]:
+                    if col in df_cls.columns:
+                        df_cls[col] = df_cls[col].apply(lambda x: f"{x * 100:.1f}%")
+                st.dataframe(df_cls, use_container_width=True)
+
+            # Evaluation Curves & Plots
+            st.markdown("##### 📈 Evaluation Curves & Confusion Matrix")
+            curve_cols = st.columns(3)
+            art_dir = eval_data.get("artifact_dir", "runs/evaluation")
+            
+            pr_path = os.path.join(art_dir, "BoxPR_curve.png")
+            f1_path = os.path.join(art_dir, "BoxF1_curve.png")
+            cm_path = os.path.join(art_dir, "confusion_matrix.png")
+
+            if os.path.exists(pr_path):
+                with curve_cols[0]:
+                    st.caption("Precision-Recall Curve")
+                    st.image(pr_path, use_container_width=True)
+            if os.path.exists(f1_path):
+                with curve_cols[1]:
+                    st.caption("F1-Confidence Curve")
+                    st.image(f1_path, use_container_width=True)
+            if os.path.exists(cm_path):
+                with curve_cols[2]:
+                    st.caption("Confusion Matrix")
+                    st.image(cm_path, use_container_width=True)
+
+            # Download Report
+            with open(report_file, "rb") as rf:
+                st.download_button("📥 Download Full Accuracy JSON Report", rf, file_name="model_accuracy_report.json", mime="application/json")
+
+    # TAB 4: Custom Model Training
+    with tab4:
         st.subheader("Fine-Tune YOLO on Custom Dataset")
         st.markdown("Train a custom YOLO object detector by supplying a `data.yaml` file pointing to annotated images and labels.")
 
@@ -379,8 +473,8 @@ def main():
                     except Exception as ex:
                         st.error(f"Training failed: {ex}")
 
-    # TAB 4: Analytics & Export
-    with tab4:
+    # TAB 5: Analytics & Export
+    with tab5:
         st.subheader("System Analytics & Configuration")
         st.json(config)
 

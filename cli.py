@@ -111,6 +111,17 @@ def cmd_train(args):
     )
     print(f"🎉 Training finished successfully! Best weights: {res.get('best_weights')}")
 
+def cmd_evaluate(args):
+    from evaluate import evaluate_model
+    evaluate_model(
+        model_path=args.model,
+        data_yaml=args.data,
+        imgsz=args.imgsz,
+        batch_size=args.batch,
+        device=args.device,
+        output_dir=args.output_dir
+    )
+
 def cmd_serve_ui(args):
     print(f"[YOLO CLI] Launching Streamlit Web App on port {args.port}...")
     cmd = [sys.executable, "-m", "streamlit", "run", "app/streamlit_app.py", "--server.port", str(args.port), "--browser.gatherUsageStats", "false"]
@@ -160,6 +171,16 @@ def main():
     p_trn.add_argument("--batch", type=int, default=16, help="Batch size")
     p_trn.add_argument("--imgsz", type=int, default=640, help="Image size")
     p_trn.set_defaults(func=cmd_train)
+
+    # evaluate
+    p_eva = subparsers.add_parser("evaluate", help="Benchmark model accuracy (mAP50, mAP50-95, precision, recall, latency)")
+    p_eva.add_argument("--model", "-m", default="yolov8n.pt", help="YOLO model path or name")
+    p_eva.add_argument("--data", "-d", default="coco8.yaml", help="Validation dataset yaml config")
+    p_eva.add_argument("--imgsz", type=int, default=640, help="Image resolution")
+    p_eva.add_argument("--batch", type=int, default=16, help="Batch size")
+    p_eva.add_argument("--device", default="cpu", help="Compute device ('cpu' or 'cuda:0')")
+    p_eva.add_argument("--output-dir", "-o", default="outputs", help="Output directory for reports")
+    p_eva.set_defaults(func=cmd_evaluate)
 
     # serve-ui
     p_ui = subparsers.add_parser("serve-ui", help="Start interactive Streamlit web dashboard")

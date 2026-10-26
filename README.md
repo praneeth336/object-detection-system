@@ -127,6 +127,29 @@ python cli.py detect-video --input 0 --model yolov8n.pt
 python cli.py train --data sample_data/data.yaml --epochs 25 --batch 16
 ```
 
+### Model Accuracy & Benchmark Evaluation
+```bash
+python cli.py evaluate --model yolov8n.pt --data coco8.yaml
+# Or directly via evaluate.py:
+python evaluate.py --model yolov8n.pt --data coco8.yaml
+```
+
+---
+
+## 🎯 Model Accuracy & Benchmark Evaluation Guide
+
+To benchmark the accuracy and latency of any YOLO model:
+```bash
+python evaluate.py --model yolov8n.pt --data coco8.yaml
+```
+Outputs:
+- **mAP@50** and **mAP@50-95** (Mean Average Precision)
+- **Precision**, **Recall**, and **F1-Score**
+- **Per-class performance breakdown** (exported to `outputs/model_accuracy_per_class.csv`)
+- **Speed & Latency benchmarks** (pre-process, inference, post-process, and effective FPS)
+- **Visual curves**: Confusion matrix, PR curve, and F1 curve (in `runs/evaluation/`)
+- Interactive benchmarking tab available directly in the **Streamlit Web Dashboard**.
+
 ---
 
 ## 🏋️ Custom Model Fine-Tuning Guide

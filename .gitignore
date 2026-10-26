@@ -18,6 +18,8 @@ ENV/
 # Output directories & inference results
 outputs/
 runs/
+datasets/
+.config/
 
 # Logs
 *.log
