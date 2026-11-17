@@ -25,6 +25,7 @@ datasets/
 *.log
 
 # IDE & OS files
+.streamlit/
 .vscode/
 .idea/
 *.sublime-project

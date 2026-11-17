@@ -139,9 +139,10 @@ def main():
         line_counter = LineCounter(line_pt1=[0.1, 0.5], line_pt2=[0.9, 0.5])
 
     # Main Tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "🖼️ Image Detection",
-        "🎥 Video & Stream Processing",
+        "📹 Live Webcam Detection",
+        "🎥 Video File Processing",
         "🎯 Model Accuracy Benchmark",
         "🏋️ Custom Training",
         "📊 Analytics & Export"
@@ -248,36 +249,147 @@ def main():
                 else:
                     st.info("Distance measurement is currently toggled off in the sidebar.")
 
-    # TAB 2: Video & Stream Processing
+    # TAB 2: Live Webcam Detection
     with tab2:
-        st.subheader("Video File & Live Stream Object Detection with Color & Distance Tracking")
-        source_type = st.radio("Select Video Input Source", ["Video File Upload", "Webcam Feed (Local)"], horizontal=True)
+        st.subheader("📹 Real-time Live Webcam & Camera Stream Detection")
+        st.markdown("Perform live object detection, dominant color recognition, inter-object distance estimation, and tracking directly from your webcam or camera stream.")
 
-        if source_type == "Video File Upload":
-            video_file = st.file_uploader("Upload Video File", type=["mp4", "avi", "mov", "mkv"])
-            if video_file is not None:
-                tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-                tfile.write(video_file.read())
-                tfile.close()
+        cam_mode = st.radio(
+            "Select Live Camera Mode:",
+            ["🌐 Browser Camera (Instant & Works on Any Device)", "🔌 Continuous Live Stream (USB Webcam / IP / RTSP Camera)"],
+            horizontal=True
+        )
 
-                st_video_placeholder = st.empty()
-                st_info_placeholder = st.empty()
-                st_chart_placeholder = st.empty()
+        if cam_mode == "🌐 Browser Camera (Instant & Works on Any Device)":
+            st.markdown("##### 📸 Browser Live Camera Feed")
+            st.caption("Uses your browser's camera input. Works seamlessly on laptops, mobile phones, and desktops.")
 
-                if st.button("▶️ Start Video Detection"):
-                    cap = cv2.VideoCapture(tfile.name)
-                    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                    fps_val = cap.get(cv2.CAP_PROP_FPS) or 30
+            camera_img = st.camera_input("Capture Live Frame from Camera")
 
-                    progress_bar = st.progress(0)
-                    all_video_detections = []
-                    counts_over_time = []
+            if camera_img is not None:
+                file_bytes = np.asarray(bytearray(camera_img.read()), dtype=np.uint8)
+                frame = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+
+                start_t = time.time()
+                res = detector.detect_frame(
+                    frame=frame,
+                    enable_tracking=enable_tracking,
+                    target_classes=target_class_ids,
+                    roi_manager=roi_manager,
+                    line_counter=line_counter,
+                    detect_color=enable_color,
+                    measure_distance=enable_distance,
+                    distance_threshold=float(dist_threshold),
+                    distance_connect_mode=dist_mode,
+                    annotate=True
+                )
+                latency_ms = (time.time() - start_t) * 1000
+
+                # Visuals
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("**Original Camera Snapshot**")
+                    st.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), use_container_width=True)
+                with c2:
+                    st.markdown("**Annotated Live Detection (Labels, Colors & Distance Lines)**")
+                    if res.annotated_image is not None:
+                        st.image(cv2.cvtColor(res.annotated_image, cv2.COLOR_BGR2RGB), use_container_width=True)
+
+                # Metrics row
+                close_pairs_count = sum(1 for p in res.distances if p.get("is_close", False))
+                mc1, mc2, mc3, mc4 = st.columns(4)
+                mc1.metric("Objects Detected", res.total_count)
+                mc2.metric("Inference Latency", f"{latency_ms:.1f} ms")
+                if enable_distance and len(res.detections) > 1:
+                    closest_txt = f"{res.closest_distance} px" if res.closest_distance is not None else "N/A"
+                    mc3.metric("Closest Object Distance", closest_txt)
+                    mc4.metric("🚨 Proximity Alerts", close_pairs_count)
+                else:
+                    mc3.metric("Unique Classes", len(res.counts_by_class))
+                    mc4.metric("Proximity Status", "Safe" if len(res.detections) < 2 else "Monitored")
+
+                if enable_distance and close_pairs_count > 0:
+                    st.markdown(f'<div class="alert-banner">⚠️ PROXIMITY ALERT: {close_pairs_count} pair(s) of objects are within {dist_threshold} pixels!</div>', unsafe_allow_html=True)
+                elif enable_distance and len(res.detections) >= 2:
+                    st.markdown(f'<div class="safe-banner">✅ Safe Spatial Clearance (&ge; {dist_threshold} px)</div>', unsafe_allow_html=True)
+
+                # Detections table & CSV download
+                if res.detections:
+                    st.markdown("##### 📋 Live Detection Table")
+                    live_rows = []
+                    for idx, d in enumerate(res.detections):
+                        live_rows.append({
+                            "Object": idx + 1,
+                            "Class": d.get("class_name", ""),
+                            "Dominant Color": d.get("color_name", "N/A"),
+                            "Confidence": f"{d.get('confidence', 0):.1%}",
+                            "Bounding Box": str(d.get("bbox", []))
+                        })
+                    st.dataframe(pd.DataFrame(live_rows), use_container_width=True)
+
+                    live_csv = export_detections_csv(res.detections, "outputs/live_camera_detections.csv")
+                    with open(live_csv, "rb") as f:
+                        st.download_button("📥 Download Live Detections CSV", f, file_name="live_camera_detections.csv", mime="text/csv")
+
+        else:
+            st.markdown("##### 🔌 Continuous Live Stream (Local USB Webcam or IP Camera)")
+            st.caption("Continuously streams and detects frames with real-time HUD and tracking.")
+
+            ccol1, ccol2, ccol3 = st.columns([2, 1, 1])
+            with ccol1:
+                cam_source_type = st.radio("Stream Source:", ["USB / Built-in Camera Index", "IP Webcam / RTSP Stream URL"], horizontal=True)
+                if cam_source_type == "USB / Built-in Camera Index":
+                    cam_input = st.number_input("Camera Device Index (0 = default, 1 = external USB)", min_value=0, max_value=10, value=0, step=1)
+                else:
+                    cam_input = st.text_input("Stream URL:", value="http://192.168.1.100:8080/video", help="e.g. rtsp://user:pass@ip:port/stream or http://ip:8080/video from DroidCam or IP Webcam")
+            with ccol2:
+                stream_res = st.selectbox("Resolution:", ["Auto / Native", "640x480 (Faster)", "1280x720 (HD)"], index=0)
+            with ccol3:
+                max_stream_fps = st.slider("Target Stream FPS Throttle:", min_value=5, max_value=60, value=30, step=5)
+
+            if "stream_running" not in st.session_state:
+                st.session_state.stream_running = False
+
+            scol1, scol2 = st.columns(2)
+            with scol1:
+                if st.button("▶️ Start Live Stream", use_container_width=True, disabled=st.session_state.stream_running):
+                    st.session_state.stream_running = True
+                    st.rerun()
+            with scol2:
+                if st.button("⏹️ Stop Stream", use_container_width=True, disabled=not st.session_state.stream_running):
+                    st.session_state.stream_running = False
+                    st.rerun()
+
+            live_placeholder = st.empty()
+            live_status = st.empty()
+
+            if st.session_state.stream_running:
+                cap_src = int(cam_input) if cam_source_type == "USB / Built-in Camera Index" else str(cam_input).strip()
+                if isinstance(cap_src, int) and sys.platform.startswith("win"):
+                    cap = cv2.VideoCapture(cap_src, cv2.CAP_DSHOW)
+                    if not cap.isOpened():
+                        cap = cv2.VideoCapture(cap_src)
+                else:
+                    cap = cv2.VideoCapture(cap_src)
+
+                if not cap.isOpened():
+                    st.error(f"❌ Could not open camera source '{cap_src}'. If using USB webcam, check device index. If using browser, use 'Browser Camera' option above.")
+                    st.session_state.stream_running = False
+                else:
+                    if stream_res == "640x480 (Faster)":
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                    elif stream_res == "1280x720 (HD)":
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
                     frame_idx = 0
-
-                    while cap.isOpened():
+                    while st.session_state.stream_running and cap.isOpened():
                         ret, frame = cap.read()
-                        if not ret:
-                            break
+                        if not ret or frame is None:
+                            live_status.warning("⚠️ Waiting for camera frame...")
+                            time.sleep(0.1)
+                            continue
 
                         res = detector.detect_frame(
                             frame=frame,
@@ -293,46 +405,47 @@ def main():
                             annotate=True
                         )
 
-                        all_video_detections.extend(res.detections)
-                        counts_over_time.append({
-                            "frame": frame_idx,
-                            "count": res.total_count,
-                            "fps": res.fps,
-                            "closest_distance": res.closest_distance or 0.0
-                        })
-
                         if res.annotated_image is not None:
                             rgb_frame = cv2.cvtColor(res.annotated_image, cv2.COLOR_BGR2RGB)
-                            st_video_placeholder.image(rgb_frame, channels="RGB", use_container_width=True)
+                            live_placeholder.image(rgb_frame, channels="RGB", use_container_width=True)
 
-                        closest_info = f" | Closest Dist: {res.closest_distance}px" if res.closest_distance else ""
-                        st_info_placeholder.text(f"Processing Frame {frame_idx}/{frame_count} | Objects: {res.total_count} | FPS: {res.fps}{closest_info}")
-                        
-                        if frame_count > 0:
-                            progress_bar.progress(min(1.0, frame_idx / frame_count))
+                        closest_info = f" | Closest: {res.closest_distance}px" if res.closest_distance else ""
+                        close_pairs = sum(1 for p in res.distances if p.get("is_close", False))
+                        alert_info = f" | 🚨 ALERTS: {close_pairs}" if close_pairs > 0 else ""
+                        live_status.markdown(f"**Live Stream Active** | **FPS:** {res.fps} | **Objects:** {res.total_count}{closest_info}{alert_info}")
 
                         frame_idx += 1
+                        time.sleep(max(0.001, 1.0 / max_stream_fps))
 
                     cap.release()
-                    st.success("Video processing complete!")
+                    live_status.info("Stream stopped.")
 
-                    if counts_over_time:
-                        counts_df = pd.DataFrame(counts_over_time)
-                        st_chart_placeholder.line_chart(counts_df.set_index("frame")[["count", "fps"]])
+    # TAB 3: Video File Processing
+    with tab3:
+        st.subheader("Video File Object Detection with Color & Distance Tracking")
+        video_file = st.file_uploader("Upload Video File", type=["mp4", "avi", "mov", "mkv"])
+        if video_file is not None:
+            tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+            tfile.write(video_file.read())
+            tfile.close()
 
-        elif source_type == "Webcam Feed (Local)":
-            st.info("Ensure a local webcam device (Index 0) is connected.")
-            run_cam = st.checkbox("Turn On Webcam")
-            cam_placeholder = st.empty()
-            cam_info = st.empty()
+            st_video_placeholder = st.empty()
+            st_info_placeholder = st.empty()
+            st_chart_placeholder = st.empty()
 
-            if run_cam:
-                cap = cv2.VideoCapture(0)
+            if st.button("▶️ Start Video Detection"):
+                cap = cv2.VideoCapture(tfile.name)
+                frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                fps_val = cap.get(cv2.CAP_PROP_FPS) or 30
+
+                progress_bar = st.progress(0)
+                all_video_detections = []
+                counts_over_time = []
                 frame_idx = 0
-                while run_cam and cap.isOpened():
+
+                while cap.isOpened():
                     ret, frame = cap.read()
                     if not ret:
-                        st.error("Failed to capture image from webcam.")
                         break
 
                     res = detector.detect_frame(
@@ -349,17 +462,35 @@ def main():
                         annotate=True
                     )
 
+                    all_video_detections.extend(res.detections)
+                    counts_over_time.append({
+                        "frame": frame_idx,
+                        "count": res.total_count,
+                        "fps": res.fps,
+                        "closest_distance": res.closest_distance or 0.0
+                    })
+
                     if res.annotated_image is not None:
                         rgb_frame = cv2.cvtColor(res.annotated_image, cv2.COLOR_BGR2RGB)
-                        cam_placeholder.image(rgb_frame, channels="RGB", use_container_width=True)
+                        st_video_placeholder.image(rgb_frame, channels="RGB", use_container_width=True)
 
                     closest_info = f" | Closest Dist: {res.closest_distance}px" if res.closest_distance else ""
-                    cam_info.markdown(f"**Live Feed FPS:** {res.fps} | **Current Object Count:** {res.total_count}{closest_info}")
-                    frame_idx += 1
-                cap.release()
+                    st_info_placeholder.text(f"Processing Frame {frame_idx}/{frame_count} | Objects: {res.total_count} | FPS: {res.fps}{closest_info}")
+                    
+                    if frame_count > 0:
+                        progress_bar.progress(min(1.0, frame_idx / frame_count))
 
-    # TAB 3: Model Accuracy Benchmark
-    with tab3:
+                    frame_idx += 1
+
+                cap.release()
+                st.success("Video processing complete!")
+
+                if counts_over_time:
+                    counts_df = pd.DataFrame(counts_over_time)
+                    st_chart_placeholder.line_chart(counts_df.set_index("frame")[["count", "fps"]])
+
+    # TAB 4: Model Accuracy Benchmark
+    with tab4:
         st.subheader("🎯 Model Accuracy & Performance Benchmarking")
         st.markdown("Evaluate standard object detection accuracy metrics (**mAP50**, **mAP50-95**, **Precision**, **Recall**, **F1-Score**) and inference latency across validation datasets.")
 
@@ -445,8 +576,8 @@ def main():
             with open(report_file, "rb") as rf:
                 st.download_button("📥 Download Full Accuracy JSON Report", rf, file_name="model_accuracy_report.json", mime="application/json")
 
-    # TAB 4: Custom Model Training
-    with tab4:
+    # TAB 5: Custom Model Training
+    with tab5:
         st.subheader("Fine-Tune YOLO on Custom Dataset")
         st.markdown("Train a custom YOLO object detector by supplying a `data.yaml` file pointing to annotated images and labels.")
 
@@ -473,8 +604,8 @@ def main():
                     except Exception as ex:
                         st.error(f"Training failed: {ex}")
 
-    # TAB 5: Analytics & Export
-    with tab5:
+    # TAB 6: Analytics & Export
+    with tab6:
         st.subheader("System Analytics & Configuration")
         st.json(config)
 

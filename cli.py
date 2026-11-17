@@ -122,6 +122,20 @@ def cmd_evaluate(args):
         output_dir=args.output_dir
     )
 
+def cmd_live(args):
+    from live_detection import run_live_detection
+    run_live_detection(
+        source=args.source,
+        model_path=args.model,
+        conf=args.conf,
+        iou=args.iou,
+        enable_color=args.detect_color,
+        enable_distance=args.measure_distance,
+        dist_threshold=args.dist_thresh,
+        enable_tracking=args.tracking,
+        output_dir=args.output_dir
+    )
+
 def cmd_serve_ui(args):
     print(f"[YOLO CLI] Launching Streamlit Web App on port {args.port}...")
     cmd = [sys.executable, "-m", "streamlit", "run", "app/streamlit_app.py", "--server.port", str(args.port), "--browser.gatherUsageStats", "false"]
@@ -181,6 +195,19 @@ def main():
     p_eva.add_argument("--device", default="cpu", help="Compute device ('cpu' or 'cuda:0')")
     p_eva.add_argument("--output-dir", "-o", default="outputs", help="Output directory for reports")
     p_eva.set_defaults(func=cmd_evaluate)
+
+    # live
+    p_liv = subparsers.add_parser("live", help="Launch real-time live webcam/camera object detection")
+    p_liv.add_argument("--source", "-s", default="0", help="Camera index (0, 1) or IP stream URL")
+    p_liv.add_argument("--model", "-m", default="yolov8n.pt", help="YOLO model path or name")
+    p_liv.add_argument("--conf", type=float, default=0.25, help="Confidence threshold")
+    p_liv.add_argument("--iou", type=float, default=0.45, help="IoU NMS threshold")
+    p_liv.add_argument("--no-color", dest="detect_color", action="store_false", help="Disable color recognition")
+    p_liv.add_argument("--no-distance", dest="measure_distance", action="store_false", help="Disable distance measurement")
+    p_liv.add_argument("--no-track", dest="tracking", action="store_false", help="Disable tracking")
+    p_liv.add_argument("--dist-thresh", type=float, default=150.0, help="Proximity alert threshold in pixels")
+    p_liv.add_argument("--output-dir", "-o", default="outputs", help="Directory for snapshots")
+    p_liv.set_defaults(func=cmd_live, detect_color=True, measure_distance=True, tracking=True)
 
     # serve-ui
     p_ui = subparsers.add_parser("serve-ui", help="Start interactive Streamlit web dashboard")

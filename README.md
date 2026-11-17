@@ -42,6 +42,8 @@ A full-featured, modular object detection, tracking, zone analysis, and custom m
 ├── sample_data/
 │   └── data.yaml         # Dataset configuration template
 ├── cli.py                # Command Line Interface (CLI) entry point
+├── live_detection.py     # Real-time live camera & stream detection HUD
+├── evaluate.py           # Model accuracy & benchmarking evaluation script
 ├── train.py              # Standalone model training script
 ├── demo.py               # Demo & end-to-end verification script
 ├── config.yaml           # System configuration settings
@@ -112,6 +114,18 @@ print(f"Class Breakdown: {data['counts_by_class']}")
 ```bash
 python cli.py detect-image --input sample_data/sample.jpg --model yolov8n.pt --save-csv --save-json
 ```
+
+### Real-time Live Camera Detection (HUD Window)
+```bash
+# Launch interactive live detection on default webcam (Index 0):
+python cli.py live --source 0 --model yolov8n.pt
+# Or directly via live_detection.py:
+python live_detection.py --source 0
+
+# Connect to an IP Camera / RTSP stream (e.g., DroidCam / IP Webcam):
+python cli.py live --source "http://192.168.1.100:8080/video"
+```
+*Live Hotkeys: `[Q]` Quit, `[C]` Toggle Color, `[D]` Toggle Distance, `[T]` Toggle Tracking, `[S]` Save Snapshot.*
 
 ### Video / Webcam Detection & Tracking
 ```bash
